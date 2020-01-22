@@ -1,24 +1,19 @@
-FROM python:3.6-slim-stretch
+FROM python:3.7-slim-stretch
 
-RUN apt update
-RUN apt install -y python3-dev gcc
+RUN apt-get update && apt-get install -y git python3-dev gcc \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install pytorch and fastai
-RUN pip install torch torchvision
-RUN pip install fastai
+COPY requirements.txt .
 
-# Install starlette and uvicorn
-RUN pip install starlette uvicorn python-multipart aiohttp
+RUN pip install --upgrade -r requirements.txt
 
 ADD eye_disease.py eye_disease.py
 ADD export.pkl export.pkl
 ADD fnames.csv fnames.csv
-# ADD usa-inaturalist-cats.pth usa-inaturalist-cats.pth
 
-# Run it once to trigger resnet download
 RUN python eye_disease.py
 
-EXPOSE 8008
+EXPOSE 5000
 
 # Start the server
 CMD ["python", "eye_disease.py", "serve"]
