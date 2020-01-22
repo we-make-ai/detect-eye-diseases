@@ -1,24 +1,52 @@
-from starlette.applications import Starlette
-from starlette.responses import JSONResponse, HTMLResponse, RedirectResponse
-
-from fastai.vision import *
-
-from pathlib import Path
-from io import BytesIO
-import uvicorn
 import aiohttp
 import asyncio
-import pandas as pd
+import uvicorn
+from fastai import *
+from fastai.vision import *
+from io import BytesIO
+from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import HTMLResponse, JSONResponse
+from starlette.staticfiles import StaticFiles
+
+export_file_url = 'https://drive.google.com/uc?export=download&id=1U6vmC0eY_ejOvFvHIjXUsvI7Jsn31SRd'
+export_file_name = 'export.pkl'
+
+classes = ['black', 'grizzly', 'teddys']
+path = Path(__file__).parent
 
 app = Starlette()
+app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_headers=['X-Requested-With', 'Content-Type'])
+app.mount('/static', StaticFiles(directory='app/static'))
 
-path = Path('./')
-learner = load_learner(path)
 
-async def get_bytes(url):
+async def download_file(url, dest):
+    if dest.exists(): return
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
-            return await response.read()
+            data = await response.read()
+            with open(dest, 'wb') as f:
+                f.write(data)
+
+
+async def setup_learner():
+    await download_file(export_file_url, path / export_file_name)
+    try:
+        learn = load_learner(path, export_file_name)
+        return learn
+    except RuntimeError as e:
+        if len(e.args) > 0 and 'CPU-only machine' in e.args[0]:
+            print(e)
+            message = "\n\nThis model was trained with an old version of fastai and will not work in a CPU environment.\n\nPlease update the fastai library in your training environment and export your model again.\n\nSee instructions for 'Returning to work' at https://course.fast.ai."
+            raise RuntimeError(message)
+        else:
+            raise
+
+
+loop = asyncio.get_event_loop()
+tasks = [asyncio.ensure_future(setup_learner())]
+learn = loop.run_until_complete(asyncio.gather(*tasks))[0]
+loop.close()
 
 @app.route("/upload", methods=["POST"])
 async def upload(request):
@@ -35,7 +63,7 @@ async def classify_url(request):
 
 def predict_image_from_bytes(bytes):
     img = open_image(BytesIO(bytes))
-    _,_,losses = learner.predict(img)    
+    _,_,losses = learn.predict(img)    
     return JSONResponse({
         "predictions": sorted(
             zip(learner.data.classes, map(float, losses)),
@@ -44,6 +72,11 @@ def predict_image_from_bytes(bytes):
         )
     })
 
+
+@app.route('/')
+async def homepage(request):
+    html_file = path / 'view' / 'index.html'
+    return HTMLResponse(html_file.open().read())
 
 @app.route("/")
 def form(request):
@@ -113,6 +146,6 @@ def redirect_to_homepage(request):
     return RedirectResponse("/")
 
 
-if __name__ == "__main__":
-    if "serve" in sys.argv:
-        uvicorn.run(app, host="0.0.0.0", port=8008)
+if __name__ == '__main__':
+    if 'serve' in sys.argv:
+        uvicorn.run(app=app, host='0.0.0.0', port=5000, log_level="info")
