@@ -1,2 +1,3 @@
 certifi==2019.11.28
+uvicorn
 gunicorn
