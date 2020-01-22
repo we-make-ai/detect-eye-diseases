@@ -11,7 +11,6 @@ uvloop==0.13.0
 websockets==8.0.2
 fastai
 pathlib
-io
 aiohttp
 asyncio
 pandas
