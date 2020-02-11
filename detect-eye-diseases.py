@@ -35,14 +35,22 @@ async def classify_url(request):
 
 def predict_image_from_bytes(bytes):
     img = open_image(BytesIO(bytes))
-    _,_,losses = learner.predict(img)
-    return JSONResponse({
+    _,_,losses = learn.predict(img)    
+    #return JSONResponse({
+    #    "predictions": sorted(
+    #        zip(learner.data.classes, map(float, losses)),
+    #        key=lambda p: p[1],
+    #        reverse=True
+    #    )
+    #})
+    preds = JSONResponse({
         "predictions": sorted(
             zip(learner.data.classes, map(float, losses)),
             key=lambda p: p[1],
             reverse=True
         )
     })
+    return render_template('show_predictions.html', **locals())
 
 
 @app.route("/")
