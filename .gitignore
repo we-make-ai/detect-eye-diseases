@@ -1,5 +1,8 @@
 data
 models
+app/*.pkl
+*.pkl
+
 
 
 # Created by https://www.gitignore.io/api/macos,python,jupyternotebooks

@@ -1,27 +1,60 @@
-from starlette.applications import Starlette
-from starlette.responses import JSONResponse, HTMLResponse, RedirectResponse
-
-from fastai.vision import *
-
-from pathlib import Path
-from io import BytesIO
-import uvicorn
 import aiohttp
 import asyncio
-import pandas as pd
+import uvicorn
+from fastai import *
+from fastai.vision import *
+from io import BytesIO
+from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import HTMLResponse, JSONResponse
+from starlette.staticfiles import StaticFiles
+from starlette.templating import Jinja2Templates
+from starlette.routing import Route
+import nest_asyncio
+
+nest_asyncio.apply()
+export_file_url = 'https://drive.google.com/uc?export=download&id=1U6vmC0eY_ejOvFvHIjXUsvI7Jsn31SRd'
+export_file_name = 'export.pkl'
+
+classes = ['cataract', 'glaucoma', 'normal', 'retina_disease']
+path = Path(__file__).parent
+templates = Jinja2Templates(directory=str(path/'templates'))
 
 app = Starlette()
+app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_headers=['X-Requested-With', 'Content-Type'])
+app.mount('/static', StaticFiles(directory='app/static'))
+app.mount('/templates', StaticFiles(directory='app/templates'))
 
-path = Path('./')
-learner = load_learner(path)
-
-async def get_bytes(url):
+async def download_file(url, dest):
+    if dest.exists(): return
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
-            return await response.read()
+            data = await response.read()
+            with open(dest, 'wb') as f:
+                f.write(data)
 
-@app.route("/upload", methods=["POST"])
-async def upload(request):
+
+async def setup_learner():
+    await download_file(export_file_url, path / export_file_name)
+    try:
+        learn = load_learner(path, export_file_name)
+        return learn
+    except RuntimeError as e:
+        if len(e.args) > 0 and 'CPU-only machine' in e.args[0]:
+            print(e)
+            message = "\n\nThis model was trained with an old version of fastai and will not work in a CPU environment.\n\nPlease update the fastai library in your training environment and export your model again.\n\nSee instructions for 'Returning to work' at https://course.fast.ai."
+            raise RuntimeError(message)
+        else:
+            raise
+
+
+loop = asyncio.get_event_loop()
+tasks = [asyncio.ensure_future(setup_learner())]
+learn = loop.run_until_complete(asyncio.gather(*tasks))[0]
+loop.close()
+
+@app.route("/analyze", methods=["POST"])
+async def analyze(request):
     data = await request.form()
     bytes = await (data["file"].read())
     return predict_image_from_bytes(bytes)
@@ -30,46 +63,36 @@ async def upload(request):
 @app.route("/classify-url", methods=["GET"])
 async def classify_url(request):
     bytes = await get_bytes(request.query_params["url"])
-    return predict_image_from_bytes(bytes)
+    context = {
+        "request": request, 
+        "data": predict_image_from_bytes(bytes)
+    }
+    return templates.TemplateResponse('show_predictions.html', context=context)
 
 
 def predict_image_from_bytes(bytes):
     img = open_image(BytesIO(bytes))
-    _,_,losses = learn.predict(img)    
-    #return JSONResponse({
-    #    "predictions": sorted(
-    #        zip(learner.data.classes, map(float, losses)),
-    #        key=lambda p: p[1],
-    #        reverse=True
-    #    )
-    #})
-    preds = JSONResponse({
+    x,y,losses = learn.predict(img)   
+    return JSONResponse({
         "predictions": sorted(
-            zip(learner.data.classes, map(float, losses)),
-            key=lambda p: p[1],
-            reverse=True
-        )
+            zip(learn.data.classes, map(float, losses)),
+            key=lambda p: p[0]
+        ),
+        "results": [(label, prob) for label, prob in zip(learn.data.classes, map(round, (map(float, losses*100))))]   
     })
-    return render_template('show_predictions.html', **locals())
 
+@app.route('/')
+async def homepage(request):
+    html_file = path / 'templates' / 'index.html'
+    return templates.TemplateResponse("index.html", {"request": request})
 
-@app.route("/")
+#@app.route("/")
 def form(request):
     return HTMLResponse(
         """
         <!DOCTYPE html>
         <html lang="en">
         <head>
-        <!-- Global site tag (gtag.js) - Google Analytics -->
-        <script async src="https://www.googletagmanager.com/gtag/js?id=UA-152392799-2"></script>
-        <script>
-          window.dataLayer = window.dataLayer || [];
-          function gtag(){dataLayer.push(arguments);}
-          gtag('js', new Date());
-
-          gtag('config', 'UA-152392799-2');
-        </script>
-
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <!-- Latest compiled and minified CSS -->
@@ -114,14 +137,14 @@ def form(request):
                 <div class="row">
                     <div class="col-md-2">
                     </div>
-                    <div class="col-md-8">
-                        Or submit a URL:
+                    <div class="col-md-8">                        
+                        Or submit a URL:                        
                         <form action="/classify-url" method="get">
                             <div class="form-group">
                                 <input type="url" name="url" class="input-sm">
                                 <input type="submit" value="Fetch and Analyze image" class="btn btn-primary">
                             </div>
-                        </form>
+                        </form>                        
                     </div>
                     <div class="col-md-2">
                     </div>
@@ -136,7 +159,15 @@ def form(request):
 def redirect_to_homepage(request):
     return RedirectResponse("/")
 
+# routes = [
+#     Route("/", endpoint=homepage),
+#     Route("/upload", endpoint=upload, methods=["POST"]),
+#     Route("/classify-url", endpoint=classify_url, methods=["GET"]),
+#     Route("/form", endpoint=redirect_to_homepage),
+# ]
 
-if __name__ == "__main__":
-    if "serve" in sys.argv:
-        uvicorn.run(app, host="0.0.0.0", port=8008)
+
+
+if __name__ == '__main__':
+    if 'serve' in sys.argv:
+        uvicorn.run(app=app, host='0.0.0.0', port=5000, log_level="info")
