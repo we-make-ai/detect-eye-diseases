@@ -46,10 +46,12 @@ async def setup_learner():
             raise
 
 
-loop = asyncio.get_event_loop()
-tasks = [asyncio.ensure_future(setup_learner())]
-learn = loop.run_until_complete(asyncio.gather(*tasks))[0]
-loop.close()
+#loop = asyncio.get_event_loop()
+#tasks = [asyncio.ensure_future(setup_learner())]
+#learn = loop.run_until_complete(asyncio.gather(*tasks))[0]
+#loop.close()
+
+learn = setup_learner()
 
 @app.route("/analyze", methods=["POST"])
 async def analyze(request):
