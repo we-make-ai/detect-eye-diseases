@@ -47,11 +47,13 @@ async def setup_learner():
             raise
 
 
-asyncio.set_event_loop(asyncio.new_event_loop())
-loop = asyncio.get_event_loop()
-tasks = [asyncio.ensure_future(setup_learner())]
-learn = loop.run_until_complete(asyncio.gather(*tasks))[0]
-loop.close()
+#asyncio.set_event_loop(asyncio.new_event_loop())
+#loop = asyncio.get_event_loop()
+#tasks = [asyncio.ensure_future(setup_learner())]
+#learn = loop.run_until_complete(asyncio.gather(*tasks))[0]
+#loop.close()
+
+learn = asyncio.run(setup_learner())
 
 #learn = setup_learner()
 
