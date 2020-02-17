@@ -16,7 +16,8 @@ export_file_name = 'export.pkl'
 
 classes = ['cataract', 'glaucoma', 'normal', 'retina_disease']
 path = Path(__file__).parent
-templates = Jinja2Templates(directory=str(path/'templates'))
+
+templates = Jinja2Templates(directory=str('app/templates'))
 
 app = Starlette()
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_headers=['X-Requested-With', 'Content-Type'])
