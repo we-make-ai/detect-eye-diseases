@@ -1,3 +1,5 @@
+heroku buildpacks:clear
+heroku buildpacks:add --index heroku/python
 heroku ps:scale web=0
 heroku ps:scale web=1
-web: uvicorn detect-eye-diseases:app --host=0.0.0.0 --port=${PORT:-5000}
+web: gunicorn -w 1 -k uvicorn.workers.UvicornWorker --log-level warning server:app
